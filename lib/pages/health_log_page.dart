@@ -18,6 +18,7 @@ class _HealthLogPageState extends State<HealthLogPage> {
   late FlutterTts _flutterTts;
   bool _isListening = false;
   String _transcribedText = '';
+  String _userInput = ''; // NEW: Store the final user input separately
   final TextEditingController _moodController = TextEditingController();
   
   final GeminiService _geminiService = GeminiService();
@@ -45,7 +46,6 @@ class _HealthLogPageState extends State<HealthLogPage> {
   Future<void> _initializeSpeech() async {
     _speech = stt.SpeechToText();
     
-    // Request microphone permission
     var status = await Permission.microphone.request();
     if (status.isGranted) {
       bool available = await _speech.initialize(
@@ -81,13 +81,18 @@ class _HealthLogPageState extends State<HealthLogPage> {
         _selectedSymptoms = log.symptoms.toSet();
         _moodController.text = log.mood;
         _sleepHours = log.sleepHours;
+        _userInput = log.notes; // Load existing notes if available
       }
     });
   }
 
   void _startListening() async {
     if (!_isListening && _speech.isAvailable) {
-      setState(() => _isListening = true);
+      setState(() {
+        _isListening = true;
+        _transcribedText = ''; // Clear only the live transcription
+      });
+      
       await _speak('Listening... Please describe how you are feeling');
       
       await _speech.listen(
@@ -117,32 +122,32 @@ class _HealthLogPageState extends State<HealthLogPage> {
   Future<void> _processTranscription(String text) async {
     if (text.isEmpty) return;
 
-    await _speak('Processing your input...');
+    setState(() {
+      _userInput = text; // Store the final user input
+      _isListening = false;
+    });
 
+    await _speak('Processing your input...');
+    
     try {
-      // Use Gemini to analyze the speech and extract health information
       final analysis = await _geminiService.analyzeHealthDescription(text);
       
       setState(() {
-        // Extract symptoms from analysis
         if (analysis['symptoms'] != null) {
           _selectedSymptoms = Set<String>.from(
             (analysis['symptoms'] as List).where((s) => _symptoms.contains(s))
           );
         }
         
-        // Extract mood
         if (analysis['mood'] != null) {
           _moodController.text = analysis['mood'];
         }
         
-        // Extract sleep information if mentioned
         if (analysis['sleep_hours'] != null) {
           _sleepHours = double.parse(analysis['sleep_hours'].toString());
         }
       });
 
-      // Provide feedback
       String feedback = 'I understood: ';
       if (_selectedSymptoms.isNotEmpty) {
         feedback += '${_selectedSymptoms.join(", ")}. ';
@@ -152,7 +157,7 @@ class _HealthLogPageState extends State<HealthLogPage> {
       }
       
       await _speak(feedback);
-      await _speak('Would you like to save this log?');
+      await _speak('You can adjust your selections below');
       
     } catch (e) {
       await _speak('Sorry, I had trouble processing that. Please try again.');
@@ -165,15 +170,26 @@ class _HealthLogPageState extends State<HealthLogPage> {
       symptoms: _selectedSymptoms.toList(),
       mood: _moodController.text,
       sleepHours: _sleepHours,
-      notes: _transcribedText,
+      notes: _userInput, // Save the user's voice input
     );
-
+    
     await _storageService.saveHealthLog(log);
     await _speak('Health log saved successfully');
     
     setState(() {
       _todayLog = log;
     });
+
+    // Show success message
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Health log saved successfully!'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   @override
@@ -248,7 +264,7 @@ class _HealthLogPageState extends State<HealthLogPage> {
               ),
               
               const SizedBox(height: 30),
-
+              
               // Date display
               Text(
                 "Today's Log",
@@ -258,11 +274,11 @@ class _HealthLogPageState extends State<HealthLogPage> {
                 DateTime.now().toString().split(' ')[0],
                 style: TextStyle(color: Colors.grey[400], fontSize: 16),
               ),
-
+              
               const SizedBox(height: 30),
-
-              // Transcribed text display
-              if (_transcribedText.isNotEmpty) ...[
+              
+              // Display SAVED user input (not live transcription)
+              if (_userInput.isNotEmpty) ...[
                 const Text(
                   'You said:',
                   style: TextStyle(color: Colors.white70, fontSize: 16),
@@ -276,13 +292,36 @@ class _HealthLogPageState extends State<HealthLogPage> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    _transcribedText,
+                    _userInput,
                     style: const TextStyle(color: Colors.white, fontSize: 16),
                   ),
                 ),
                 const SizedBox(height: 20),
               ],
-
+              
+              // Show live transcription only while listening
+              if (_isListening && _transcribedText.isNotEmpty) ...[
+                const Text(
+                  'Transcribing...',
+                  style: TextStyle(color: Colors.yellow, fontSize: 16),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(15),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[850],
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.yellow, width: 2),
+                  ),
+                  child: Text(
+                    _transcribedText,
+                    style: const TextStyle(color: Colors.yellow, fontSize: 16),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+              
               // Symptoms section
               const Text(
                 'How are you feeling?',
@@ -327,9 +366,9 @@ class _HealthLogPageState extends State<HealthLogPage> {
                   );
                 }).toList(),
               ),
-
+              
               const SizedBox(height: 30),
-
+              
               // Mood section
               const Text(
                 'Your mood',
@@ -339,11 +378,6 @@ class _HealthLogPageState extends State<HealthLogPage> {
               TextField(
                 controller: _moodController,
                 onTap: () => _speak('Enter your mood'),
-                onChanged: (value) {
-                  if (value.isNotEmpty) {
-                    _speak(value);
-                  }
-                },
                 style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
                   hintText: 'e.g., Happy, Tired, Anxious',
@@ -356,9 +390,9 @@ class _HealthLogPageState extends State<HealthLogPage> {
                   ),
                 ),
               ),
-
+              
               const SizedBox(height: 30),
-
+              
               // Sleep section
               const Text(
                 'Sleep',
@@ -388,9 +422,9 @@ class _HealthLogPageState extends State<HealthLogPage> {
                   ),
                 ],
               ),
-
+              
               const SizedBox(height: 30),
-
+              
               // Save button
               SizedBox(
                 width: double.infinity,
