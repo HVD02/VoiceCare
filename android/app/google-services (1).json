@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1069473889589",
+    "project_id": "voicecare-5c9e9",
+    "storage_bucket": "voicecare-5c9e9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1069473889589:android:41bf9fad52acf0cc5e207c",
+        "android_client_info": {
+          "package_name": "com.example.voicecare"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDcUt_6Kre0BrYO_OzC276zOhHioGhwkCc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
